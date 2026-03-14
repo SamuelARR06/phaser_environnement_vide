@@ -3,6 +3,7 @@
 /** + FIN : "NIVEAU TERMINE"
 /** + BOUTON : "RECOMMENCER"
 /** + CHRONO (timer) affiché à l’écran
+/** + PENALITE : si la balle sort de l'écran sans toucher => +2 secondes
 /***********************************************************************/
 
 /***********************************************************************/
@@ -25,6 +26,7 @@ var groupeCibles;
 
 // fin de niveau
 var texte_niveau_termine;
+var niveauTermine = false; // AJOUT : pour bloquer la pénalité après victoire
 
 // bouton restart
 var bouton_recommencer;
@@ -78,6 +80,10 @@ function preload() {
 /** CREATE
 /***********************************************************************/
 function create() {
+  // reset état (utile au restart)
+  niveauTermine = false;
+  chrono = 0;
+
   // fond
   this.add.image(400, 300, "img_ciel");
 
@@ -153,10 +159,18 @@ function create() {
   // overlap balles/cibles => hit
   this.physics.add.overlap(groupeBullets, groupeCibles, hit, null, this);
 
-  // détruire les balles hors écran
+  // détruire les balles hors écran + PENALITE +2 secondes si raté
   this.physics.world.on("worldbounds", function (body) {
     var obj = body.gameObject;
-    if (obj && groupeBullets.contains(obj)) obj.destroy();
+    if (obj && groupeBullets.contains(obj)) {
+      obj.destroy();
+
+      // si la balle sort => elle n'a touché aucune cible => +2 secondes
+      if (!niveauTermine) {
+        chrono = chrono + 2;
+        if (chronoTexte) chronoTexte.setText("Chrono: " + chrono);
+      }
+    }
   });
 
   // message fin de niveau (caché)
@@ -196,7 +210,7 @@ function create() {
   });
 
   // UI commandes
-  this.add.text(16, 44, "↑ double saut | (A) tirer | Cibles: 2 touches", {
+  this.add.text(16, 44, "↑ double saut | (A) tirer | Cibles: 2 touches | Raté: +2s", {
     fontSize: "18px",
     fill: "#000"
   });
@@ -204,8 +218,6 @@ function create() {
   /**********************/
   /** CHRONO (TIMER)   **/
   /**********************/
-  chrono = 0;
-
   chronoTexte = this.add.text(16, 12, "Chrono: 0", {
     fontSize: "20px",
     fill: "#ffffff",
@@ -302,6 +314,7 @@ function hit(bullet, cible) {
 
     if (groupeCibles.countActive(true) === 0) {
       texte_niveau_termine.setVisible(true);
+      niveauTermine = true;
 
       // option : on stoppe le chrono quand le niveau est terminé
       if (monTimer) monTimer.reset({ paused: true });
