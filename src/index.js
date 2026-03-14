@@ -1,7 +1,8 @@
 /***********************************************************************/
 /** BASE PHASER PLATEFORME + DOUBLE SAUT + TIR + CIBLES (PV)
 /** + FIN : "NIVEAU TERMINE"
-/** + BOUTON : "RECOMMENCER" en haut à gauche
+/** + BOUTON : "RECOMMENCER"
+/** + CHRONO (timer) affiché à l’écran
 /***********************************************************************/
 
 /***********************************************************************/
@@ -27,6 +28,11 @@ var texte_niveau_termine;
 
 // bouton restart
 var bouton_recommencer;
+
+// chrono
+var chronoTexte;
+var monTimer;
+var chrono = 0;
 
 /***********************************************************************/
 /** CONFIGURATION PHASER
@@ -97,25 +103,27 @@ function create() {
   boutonFeu = this.input.keyboard.addKey("A"); // A = tirer
 
   // animations
-  this.anims.create({
-    key: "anim_gauche",
-    frames: this.anims.generateFrameNumbers("img_perso", { start: 0, end: 3 }),
-    frameRate: 10,
-    repeat: -1
-  });
+  if (!this.anims.exists("anim_gauche")) {
+    this.anims.create({
+      key: "anim_gauche",
+      frames: this.anims.generateFrameNumbers("img_perso", { start: 0, end: 3 }),
+      frameRate: 10,
+      repeat: -1
+    });
 
-  this.anims.create({
-    key: "anim_face",
-    frames: [{ key: "img_perso", frame: 4 }],
-    frameRate: 20
-  });
+    this.anims.create({
+      key: "anim_face",
+      frames: [{ key: "img_perso", frame: 4 }],
+      frameRate: 20
+    });
 
-  this.anims.create({
-    key: "anim_droite",
-    frames: this.anims.generateFrameNumbers("img_perso", { start: 5, end: 8 }),
-    frameRate: 10,
-    repeat: -1
-  });
+    this.anims.create({
+      key: "anim_droite",
+      frames: this.anims.generateFrameNumbers("img_perso", { start: 5, end: 8 }),
+      frameRate: 10,
+      repeat: -1
+    });
+  }
 
   // groupe de balles
   groupeBullets = this.physics.add.group();
@@ -162,7 +170,7 @@ function create() {
   texte_niveau_termine.setVisible(false);
 
   // bouton "RECOMMENCER" (haut droite)
-  bouton_recommencer = this.add.text(650, 10, "RECOMMENCER", {
+  bouton_recommencer = this.add.text(625, 12, "RECOMMENCER", {
     fontSize: "20px",
     fill: "#ffffff",
     backgroundColor: "#000000",
@@ -172,7 +180,6 @@ function create() {
   bouton_recommencer.setDepth(200);
   bouton_recommencer.setInteractive({ useHandCursor: true });
 
-  // effet hover
   bouton_recommencer.on("pointerover", function () {
     bouton_recommencer.setStyle({ backgroundColor: "#333333" });
   });
@@ -180,16 +187,39 @@ function create() {
     bouton_recommencer.setStyle({ backgroundColor: "#000000" });
   });
 
-  // action : restart scène
   var sceneRef = this;
   bouton_recommencer.on("pointerdown", function () {
+    // remet le chrono à 0 et restart la scène
+    chrono = 0;
+    if (chronoTexte) chronoTexte.setText("Chrono: " + chrono);
     sceneRef.scene.restart();
   });
 
-  // mini UI
-  this.add.text(16, 44, "↑ double saut | A tirer | Cibles: 2 touches", {
+  // UI commandes
+  this.add.text(16, 44, "↑ double saut | (A) tirer | Cibles: 2 touches", {
     fontSize: "18px",
     fill: "#000"
+  });
+
+  /**********************/
+  /** CHRONO (TIMER)   **/
+  /**********************/
+  chrono = 0;
+
+  chronoTexte = this.add.text(16, 12, "Chrono: 0", {
+    fontSize: "20px",
+    fill: "#ffffff",
+    backgroundColor: "#000000",
+    padding: { x: 8, y: 4 }
+  });
+  chronoTexte.setScrollFactor(0);
+  chronoTexte.setDepth(200);
+
+  monTimer = this.time.addEvent({
+    delay: 1000,
+    callback: compteUneSeconde,
+    callbackScope: this,
+    loop: true
   });
 }
 
@@ -214,16 +244,24 @@ function update() {
     player.anims.play("anim_face");
   }
 
-  // double saut (↑)
+  // double saut
   if (Phaser.Input.Keyboard.JustDown(clavier.up) && nbSauts < maxSauts) {
     player.setVelocityY(-330);
     nbSauts++;
   }
 
-  // tir (A)
+  // tir (a)
   if (Phaser.Input.Keyboard.JustDown(boutonFeu)) {
     tirer(player);
   }
+}
+
+/***********************************************************************/
+/** CHRONO : callback toutes les 1s
+/***********************************************************************/
+function compteUneSeconde() {
+  chrono = chrono + 1;
+  if (chronoTexte) chronoTexte.setText("Chrono: " + chrono);
 }
 
 /***********************************************************************/
@@ -264,6 +302,9 @@ function hit(bullet, cible) {
 
     if (groupeCibles.countActive(true) === 0) {
       texte_niveau_termine.setVisible(true);
+
+      // option : on stoppe le chrono quand le niveau est terminé
+      if (monTimer) monTimer.reset({ paused: true });
     }
   }
 }
