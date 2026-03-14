@@ -4,6 +4,7 @@
 /** - double saut (↑, 2 sauts max)
 /** - A = tir
 /** - balles détruites hors écran
+/** - CIBLES : 2 touches => 1) rebond ralenti  2) disparition
 /***********************************************************************/
 
 /***********************************************************************/
@@ -59,7 +60,7 @@ function preload() {
     frameHeight: 48
   });
 
-  // AJOUT : assets tir/cibles
+  // assets tir/cibles
   this.load.image("bullet", "src/assets/balle.png");
   this.load.image("cible", "src/assets/cible.png");
 }
@@ -116,7 +117,7 @@ function create() {
   // groupe de balles
   groupeBullets = this.physics.add.group();
 
-  // cibles (8 cibles espacées)
+  // cibles (8)
   groupeCibles = this.physics.add.group({
     key: "cible",
     repeat: 7,
@@ -126,11 +127,18 @@ function create() {
   // collisions cibles / plateformes
   this.physics.add.collider(groupeCibles, groupe_plateformes);
 
-  // PV + rebond + y random
+  // paramètres cibles : 2 touches, rebond au départ, vitesse aléatoire
   groupeCibles.children.iterate(function (cibleTrouvee) {
-    cibleTrouvee.pointsVie = Phaser.Math.Between(1, 5);
+    cibleTrouvee.hits = 0; // nb de fois touchée
+    cibleTrouvee.setBounce(1); // rebond fort au départ
     cibleTrouvee.y = Phaser.Math.Between(10, 250);
-    cibleTrouvee.setBounce(1);
+
+    // petit mouvement pour voir l'effet de rebond
+    cibleTrouvee.setVelocity(
+      Phaser.Math.Between(-200, 200),
+      Phaser.Math.Between(-120, 120)
+    );
+    cibleTrouvee.setCollideWorldBounds(true);
   });
 
   // overlap balles/cibles => hit
@@ -145,7 +153,7 @@ function create() {
   });
 
   // mini UI
-  this.add.text(16, 16, "↑ double saut | A tirer", {
+  this.add.text(16, 16, "double saut/tirs/cibles avec 2PV", {
     fontSize: "20px",
     fill: "#000"
   });
@@ -205,12 +213,29 @@ function tirer(player) {
 }
 
 /***********************************************************************/
-/** HIT : balle touche cible => -1 PV, destroy si PV = 0
+/** HIT : touchage des cibles+ effets
 /***********************************************************************/
 function hit(bullet, cible) {
-  cible.pointsVie--;
-  if (cible.pointsVie <= 0) {
+  // la balle disparaît à l'impact (comme ton code)
+  bullet.destroy();
+
+  // compteur de touches sur la cible
+  cible.hits = (cible.hits || 0) + 1;
+
+  if (cible.hits === 1) {
+    // 1er hit : on "ralentit le rebond"
+    // - on baisse le rebond
+    // - on baisse la vitesse du rebond  
+    cible.setBounce(0.25);
+
+    if (cible.body) {
+      cible.setVelocity(cible.body.velocity.x * 0.35, cible.body.velocity.y * 0.35);
+    }
+
+    //si la cible est touchée une premiere fois alors: teinte legerement rouge
+    cible.setTint(0xffaaaa);
+  } else {
+    // 2e hit : la cible disparaît
     cible.destroy();
   }
-  bullet.destroy();
 }
