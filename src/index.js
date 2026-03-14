@@ -1,12 +1,4 @@
 /***********************************************************************/
-/** BASE PHASER PLATEFORME + DOUBLE SAUT + TIR + CIBLES (PV)
-/** + FIN : "NIVEAU TERMINE"
-/** + BOUTON : "RECOMMENCER"
-/** + CHRONO (timer) affiché à l’écran
-/** + PENALITE : si la balle sort de l'écran sans toucher => +2 secondes
-/***********************************************************************/
-
-/***********************************************************************/
 /** VARIABLES GLOBALES
 /***********************************************************************/
 var groupe_plateformes;
@@ -24,9 +16,12 @@ var groupeBullets;
 // cibles
 var groupeCibles;
 
+// bombes (qui tombent quand une cible est détruite)
+var groupeBombes;
+
 // fin de niveau
 var texte_niveau_termine;
-var niveauTermine = false; // AJOUT : pour bloquer la pénalité après victoire
+var niveauTermine = false;
 
 // bouton restart
 var bouton_recommencer;
@@ -35,6 +30,12 @@ var bouton_recommencer;
 var chronoTexte;
 var monTimer;
 var chrono = 0;
+
+// vies / game over
+var touchesJoueur = 0;
+var gameOver = false;
+var texte_game_over;
+var rotationGameOver = false;
 
 /***********************************************************************/
 /** CONFIGURATION PHASER
@@ -71,18 +72,23 @@ function preload() {
     frameHeight: 48
   });
 
-  // assets tir/cibles
   this.load.image("bullet", "src/assets/balle.png");
   this.load.image("cible", "src/assets/cible.png");
+
+  // bombe
+  this.load.image("img_bombe", "src/assets/bomb.png");
 }
 
 /***********************************************************************/
 /** CREATE
 /***********************************************************************/
 function create() {
-  // reset état (utile au restart)
+  // reset état
   niveauTermine = false;
   chrono = 0;
+  touchesJoueur = 0;
+  gameOver = false;
+  rotationGameOver = false;
 
   // fond
   this.add.image(400, 300, "img_ciel");
@@ -101,12 +107,12 @@ function create() {
   player.setBounce(0.2);
   this.physics.add.collider(player, groupe_plateformes);
 
-  // direction par défaut (pour le tir)
+  // direction tir
   player.direction = "right";
 
   // clavier
   clavier = this.input.keyboard.createCursorKeys();
-  boutonFeu = this.input.keyboard.addKey("A"); // A = tirer
+  boutonFeu = this.input.keyboard.addKey("A");
 
   // animations
   if (!this.anims.exists("anim_gauche")) {
@@ -116,13 +122,11 @@ function create() {
       frameRate: 10,
       repeat: -1
     });
-
     this.anims.create({
       key: "anim_face",
       frames: [{ key: "img_perso", frame: 4 }],
       frameRate: 20
     });
-
     this.anims.create({
       key: "anim_droite",
       frames: this.anims.generateFrameNumbers("img_perso", { start: 5, end: 8 }),
@@ -131,68 +135,64 @@ function create() {
     });
   }
 
-  // groupe de balles
+  // bullets
   groupeBullets = this.physics.add.group();
 
-  // cibles (8 cibles espacées)
+  // bombes : groupe + collisions "normales"
+  groupeBombes = this.physics.add.group();
+  this.physics.add.collider(groupeBombes, groupe_plateformes);
+  this.physics.add.overlap(player, groupeBombes, toucheParBombe, null, this);
+
+  // cibles
   groupeCibles = this.physics.add.group({
     key: "cible",
     repeat: 7,
     setXY: { x: 24, y: 0, stepX: 107 }
   });
-
-  // collisions cibles / plateformes
   this.physics.add.collider(groupeCibles, groupe_plateformes);
 
-  // paramètres cibles : 2 touches, rebond au départ, vitesse aléatoire
-  groupeCibles.children.iterate(function (cibleTrouvee) {
-    cibleTrouvee.hits = 0;
-    cibleTrouvee.setBounce(1);
-    cibleTrouvee.y = Phaser.Math.Between(10, 250);
-    cibleTrouvee.setVelocity(
-      Phaser.Math.Between(-200, 200),
-      Phaser.Math.Between(-120, 120)
-    );
-    cibleTrouvee.setCollideWorldBounds(true);
+  groupeCibles.children.iterate(function (c) {
+    c.hits = 0;
+    c.setBounce(1);
+    c.y = Phaser.Math.Between(10, 250);
+    c.setVelocity(Phaser.Math.Between(-200, 200), Phaser.Math.Between(-120, 120));
+    c.setCollideWorldBounds(true);
   });
 
-  // overlap balles/cibles => hit
   this.physics.add.overlap(groupeBullets, groupeCibles, hit, null, this);
 
-  // détruire les balles hors écran + PENALITE +2 secondes si raté
+  // bullets hors écran +2s
   this.physics.world.on("worldbounds", function (body) {
     var obj = body.gameObject;
     if (obj && groupeBullets.contains(obj)) {
       obj.destroy();
-
-      // si la balle sort => elle n'a touché aucune cible => +2 secondes
-      if (!niveauTermine) {
-        chrono = chrono + 2;
+      if (!niveauTermine && !gameOver) {
+        chrono += 2;
         if (chronoTexte) chronoTexte.setText("Chrono: " + chrono);
       }
     }
   });
 
-  // message fin de niveau (caché)
-  texte_niveau_termine = this.add.text(400, 300, "NIVEAU TERMINE", {
+  // messages
+  texte_niveau_termine = this.add.text(400, 260, "NIVEAU TERMINE", {
     fontSize: "72px",
     fill: "#ff0000",
     fontStyle: "bold"
-  });
-  texte_niveau_termine.setOrigin(0.5);
-  texte_niveau_termine.setDepth(100);
-  texte_niveau_termine.setVisible(false);
+  }).setOrigin(0.5).setDepth(100).setVisible(false);
 
-  // bouton "RECOMMENCER" (haut droite)
+  texte_game_over = this.add.text(400, 300, "GAME OVER", {
+    fontSize: "96px",
+    fill: "#ff0000",
+    fontStyle: "bold"
+  }).setOrigin(0.5).setDepth(200).setVisible(false);
+
+  // bouton recommencer
   bouton_recommencer = this.add.text(625, 12, "RECOMMENCER", {
     fontSize: "20px",
     fill: "#ffffff",
     backgroundColor: "#000000",
     padding: { x: 10, y: 6 }
-  });
-  bouton_recommencer.setScrollFactor(0);
-  bouton_recommencer.setDepth(200);
-  bouton_recommencer.setInteractive({ useHandCursor: true });
+  }).setScrollFactor(0).setDepth(300).setInteractive({ useHandCursor: true });
 
   bouton_recommencer.on("pointerover", function () {
     bouton_recommencer.setStyle({ backgroundColor: "#333333" });
@@ -203,29 +203,22 @@ function create() {
 
   var sceneRef = this;
   bouton_recommencer.on("pointerdown", function () {
-    // remet le chrono à 0 et restart la scène
-    chrono = 0;
-    if (chronoTexte) chronoTexte.setText("Chrono: " + chrono);
     sceneRef.scene.restart();
   });
 
-  // UI commandes
-  this.add.text(16, 44, "↑ double saut | (A) tirer | Cibles: 2 touches | Raté: +2s", {
+  // UI
+  this.add.text(16, 44, "↑ double saut | A tirer | Raté: +2s | Bombes: 2 hits = mort", {
     fontSize: "18px",
     fill: "#000"
   });
 
-  /**********************/
-  /** CHRONO (TIMER)   **/
-  /**********************/
+  // chrono
   chronoTexte = this.add.text(16, 12, "Chrono: 0", {
     fontSize: "20px",
     fill: "#ffffff",
     backgroundColor: "#000000",
     padding: { x: 8, y: 4 }
-  });
-  chronoTexte.setScrollFactor(0);
-  chronoTexte.setDepth(200);
+  }).setScrollFactor(0).setDepth(300);
 
   monTimer = this.time.addEvent({
     delay: 1000,
@@ -239,10 +232,13 @@ function create() {
 /** UPDATE
 /***********************************************************************/
 function update() {
-  // reset double saut au sol
+  if (gameOver) {
+    if (rotationGameOver) player.rotation += 0.25;
+    return;
+  }
+
   if (player.body.touching.down) nbSauts = 0;
 
-  // déplacements + direction
   if (clavier.left.isDown) {
     player.direction = "left";
     player.setVelocityX(-160);
@@ -256,38 +252,29 @@ function update() {
     player.anims.play("anim_face");
   }
 
-  // double saut
   if (Phaser.Input.Keyboard.JustDown(clavier.up) && nbSauts < maxSauts) {
     player.setVelocityY(-330);
     nbSauts++;
   }
 
-  // tir (a)
   if (Phaser.Input.Keyboard.JustDown(boutonFeu)) {
     tirer(player);
   }
 }
 
 /***********************************************************************/
-/** CHRONO : callback toutes les 1s
-/***********************************************************************/
 function compteUneSeconde() {
-  chrono = chrono + 1;
+  if (gameOver) return;
+  chrono += 1;
   if (chronoTexte) chronoTexte.setText("Chrono: " + chrono);
 }
 
 /***********************************************************************/
-/** TIRER
-/***********************************************************************/
 function tirer(player) {
+  if (gameOver) return;
   var coefDir = (player.direction === "left") ? -1 : 1;
 
-  var bullet = groupeBullets.create(
-    player.x + (25 * coefDir),
-    player.y - 4,
-    "bullet"
-  );
-
+  var bullet = groupeBullets.create(player.x + (25 * coefDir), player.y - 4, "bullet");
   bullet.setCollideWorldBounds(true);
   bullet.body.onWorldBounds = true;
   bullet.body.allowGravity = false;
@@ -295,8 +282,7 @@ function tirer(player) {
 }
 
 /***********************************************************************/
-/** HIT : 1er hit => rebond ralenti, 2e hit => disparition
-/** + si plus aucune cible => affiche "NIVEAU TERMINE"
+/** HIT cible : 2e hit => destruction + bombe tombe DU CIEL
 /***********************************************************************/
 function hit(bullet, cible) {
   bullet.destroy();
@@ -305,19 +291,73 @@ function hit(bullet, cible) {
 
   if (cible.hits === 1) {
     cible.setBounce(0.25);
-    if (cible.body) {
-      cible.setVelocity(cible.body.velocity.x * 0.35, cible.body.velocity.y * 0.35);
-    }
+    if (cible.body) cible.setVelocity(cible.body.velocity.x * 0.35, cible.body.velocity.y * 0.35);
     cible.setTint(0xffaaaa);
   } else {
+    var x = cible.x;
     cible.destroy();
+
+    // bombe qui tombe du ciel, rebond "normal" comme les cibles
+    tomberBombeDuCiel(x);
 
     if (groupeCibles.countActive(true) === 0) {
       texte_niveau_termine.setVisible(true);
       niveauTermine = true;
-
-      // option : on stoppe le chrono quand le niveau est terminé
       if (monTimer) monTimer.reset({ paused: true });
     }
   }
+}
+
+/***********************************************************************/
+/** Bombe : spawn en haut (y=0) et rebond "normal" (bounce=1) comme cibles
+/***********************************************************************/
+function tomberBombeDuCiel(x) {
+  var bombe = groupeBombes.create(x, 0, "img_bombe");
+  bombe.setBounce(1);
+  bombe.setCollideWorldBounds(true);
+
+  // petit mouvement horizontal, comme cibles
+  bombe.setVelocity(Phaser.Math.Between(-200, 200), Phaser.Math.Between(-120, 0));
+}
+
+/***********************************************************************/
+/** Bombe touche joueur :
+/** - 1er hit : rouge + bombe disparaît
+/** - 2e hit : GAME OVER + animation "Mario"
+/***********************************************************************/
+function toucheParBombe(player, bombe) {
+  bombe.destroy();
+  if (gameOver) return;
+
+  touchesJoueur++;
+
+  if (touchesJoueur === 1) {
+    player.setTint(0xff0000);
+    player.scene.time.delayedCall(300, function () {
+      if (!gameOver) player.clearTint();
+    });
+  } else {
+    declencheGameOver(player.scene);
+  }
+}
+
+/***********************************************************************/
+function declencheGameOver(scene) {
+  gameOver = true;
+  niveauTermine = true;
+  if (monTimer) monTimer.reset({ paused: true });
+
+  texte_game_over.setVisible(true);
+
+  player.anims.play("anim_face");
+  player.setTint(0xff0000);
+
+  // animation "Mario"
+  player.setCollideWorldBounds(false);
+  player.body.allowGravity = true;
+
+  var dx = 400 - player.x;
+  player.setVelocity(dx * 2.2, -520);
+
+  rotationGameOver = true;
 }
