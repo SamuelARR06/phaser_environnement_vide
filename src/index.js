@@ -1,34 +1,32 @@
 /***********************************************************************/
-/** VARIABLES GLOBALES
+/** BASE PHASER PLATEFORME + DOUBLE SAUT + TIR + CIBLES (PV)
+/** - gauche / droite
+/** - double saut (↑, 2 sauts max)
+/** - A = tir
+/** - balles détruites hors écran
 /***********************************************************************/
 
+/***********************************************************************/
+/** VARIABLES GLOBALES
+/***********************************************************************/
 var groupe_plateformes;
 var player;
 var clavier;
-var groupe_etoiles;
-var groupe_bombes;
-
-var score = 0;
-var zone_texte_score;
-
-var gameOver = false;
 
 // double saut
 var nbSauts = 0;
 var maxSauts = 2;
 
-// troll niveau
-var niveau = 1;
-var trollDeclenche = false;
+// tir
+var boutonFeu;
+var groupeBullets;
 
-//
-var texte_game_over;
-
+// cibles
+var groupeCibles;
 
 /***********************************************************************/
 /** CONFIGURATION PHASER
 /***********************************************************************/
-
 var config = {
   type: Phaser.AUTO,
   width: 800,
@@ -52,7 +50,6 @@ new Phaser.Game(config);
 /***********************************************************************/
 /** PRELOAD
 /***********************************************************************/
-
 function preload() {
   this.load.image("img_ciel", "src/assets/sky.png");
   this.load.image("img_plateforme", "src/assets/platform.png");
@@ -62,16 +59,15 @@ function preload() {
     frameHeight: 48
   });
 
-  this.load.image("img_etoile", "src/assets/star.png");
-  this.load.image("img_bombe", "src/assets/bomb.png");
+  // AJOUT : assets tir/cibles
+  this.load.image("bullet", "src/assets/balle.png");
+  this.load.image("cible", "src/assets/cible.png");
 }
 
 /***********************************************************************/
 /** CREATE
 /***********************************************************************/
-
 function create() {
-
   // fond
   this.add.image(400, 300, "img_ciel");
 
@@ -89,8 +85,12 @@ function create() {
   player.setBounce(0.2);
   this.physics.add.collider(player, groupe_plateformes);
 
+  // direction par défaut (pour le tir)
+  player.direction = "right";
+
   // clavier
   clavier = this.input.keyboard.createCursorKeys();
+  boutonFeu = this.input.keyboard.addKey("A"); // A = tirer
 
   // animations
   this.anims.create({
@@ -113,185 +113,104 @@ function create() {
     repeat: -1
   });
 
-  // étoiles
-  groupe_etoiles = this.physics.add.group();
+  // groupe de balles
+  groupeBullets = this.physics.add.group();
 
-  for (var i = 0; i < 10; i++) {
-    var x = 70 + i * 70;
-    groupe_etoiles.create(x, 10, "img_etoile");
-  }
-
-  this.physics.add.collider(groupe_etoiles, groupe_plateformes);
-
-  groupe_etoiles.children.iterate(function (etoile) {
-    etoile.setBounceY(Phaser.Math.FloatBetween(0.2, 0.4));
+  // cibles (8 cibles espacées)
+  groupeCibles = this.physics.add.group({
+    key: "cible",
+    repeat: 7,
+    setXY: { x: 24, y: 0, stepX: 107 }
   });
 
-  this.physics.add.overlap(
-    player,
-    groupe_etoiles,
-    ramasserEtoile,
-    null,
-    this
-  );
+  // collisions cibles / plateformes
+  this.physics.add.collider(groupeCibles, groupe_plateformes);
 
-  // score
-  zone_texte_score = this.add.text(16, 16, "Score: 0", {
-    fontSize: "32px",
+  // PV + rebond + y random
+  groupeCibles.children.iterate(function (cibleTrouvee) {
+    cibleTrouvee.pointsVie = Phaser.Math.Between(1, 5);
+    cibleTrouvee.y = Phaser.Math.Between(10, 250);
+    cibleTrouvee.setBounce(1);
+  });
+
+  // overlap balles/cibles => hit
+  this.physics.add.overlap(groupeBullets, groupeCibles, hit, null, this);
+
+  // détruire les balles hors écran
+  this.physics.world.on("worldbounds", function (body) {
+    var obj = body.gameObject;
+    if (obj && groupeBullets.contains(obj)) {
+      obj.destroy();
+    }
+  });
+
+  // mini UI
+  this.add.text(16, 16, "↑ double saut | A tirer", {
+    fontSize: "20px",
     fill: "#000"
   });
-
-  // bombes (VIDE AU NIVEAU 1)
-  groupe_bombes = this.physics.add.group();
-  this.physics.add.collider(groupe_bombes, groupe_plateformes);
-  this.physics.add.collider(player, groupe_bombes, chocAvecBombe, null, this);
-
-  // TEXTE GAME OVER (caché au départ)
-texte_game_over = this.add.text(
-  400,
-  300,
-  "GAME OVER",
-  {
-    fontSize: "120px",
-    fill: "#ff0000",
-    fontStyle: "bold"
-  }
-);
-
-// centrage parfait
-texte_game_over.setOrigin(0.5);
-
-// au-dessus de tout
-texte_game_over.setDepth(100);
-
-// caché au départ
-texte_game_over.setVisible(false);
-
 }
-
 
 /***********************************************************************/
 /** UPDATE
 /***********************************************************************/
-
 function update() {
-
-  if (gameOver) {
-    return;
-  }
-
   // reset double saut au sol
   if (player.body.touching.down) {
     nbSauts = 0;
   }
 
-  // déplacements
+  // déplacements + mise à jour direction
   if (clavier.left.isDown) {
+    player.direction = "left";
     player.setVelocityX(-160);
     player.anims.play("anim_gauche", true);
-
   } else if (clavier.right.isDown) {
+    player.direction = "right";
     player.setVelocityX(160);
     player.anims.play("anim_droite", true);
-
   } else {
     player.setVelocityX(0);
     player.anims.play("anim_face");
   }
 
-  // double saut (UNE pression = UN saut)
-  if (
-    Phaser.Input.Keyboard.JustDown(clavier.space) &&
-    nbSauts < maxSauts
-  ) {
+  // double saut (↑)
+  if (Phaser.Input.Keyboard.JustDown(clavier.up) && nbSauts < maxSauts) {
     player.setVelocityY(-330);
     nbSauts++;
   }
-}
 
-/***********************************************************************/
-/** RAMASSER ÉTOILE + TROLL NIVEAU 2
-/***********************************************************************/
-
-function ramasserEtoile(player, etoile) {
-
-  etoile.disableBody(true, true);
-
-  score += 10;
-  zone_texte_score.setText("Score: " + score);
-
-  // FIN DU NIVEAU 1
-  if (groupe_etoiles.countActive(true) === 0 && !trollDeclenche) {
-
-    trollDeclenche = true;
-    niveau = 2;
-
-    // remettre les étoiles (niveau 2)
-    groupe_etoiles.children.iterate(function (etoile) {
-      etoile.enableBody(true, etoile.x, 0, true, true);
-    });
-
-    // cacher le score
-    zone_texte_score.setVisible(false);
-
-    // message troll
-    var texte = this.add.text(
-      400,
-      300,
-      "Bravo 🎉\nNIVEAU 2",
-      {
-        fontSize: "48px",
-        fill: "#ff0000",
-        align: "center"
-      }
-    );
-    texte.setOrigin(0.5);
-
-    // chaos après 1 seconde
-    this.time.delayedCall(1000, function () {
-      lancerChaos();
-    }, [], this);
-  }
-}
-
-
-/***********************************************************************/
-/** CHAOS : 100 BOMBES
-/***********************************************************************/
-
-function lancerChaos() {
-
-  for (var i = 0; i < 100; i++) {
-
-    var x = Phaser.Math.Between(0, 800);
-
-    var bombe = groupe_bombes.create(x, 16, "img_bombe");
-    bombe.setBounce(1);
-    bombe.setCollideWorldBounds(true);
-    bombe.setVelocity(
-      Phaser.Math.Between(-300, 300),
-      Phaser.Math.Between(50, 300)
-    );
-    bombe.allowGravity = false;
+  // tir (A)
+  if (Phaser.Input.Keyboard.JustDown(boutonFeu)) {
+    tirer(player);
   }
 }
 
 /***********************************************************************/
-/** GAME OVER
+/** TIRER : créer une balle et l'envoyer dans la direction du joueur
 /***********************************************************************/
+function tirer(player) {
+  var coefDir = (player.direction === "left") ? -1 : 1;
 
-function chocAvecBombe(player, bombe) {
+  var bullet = groupeBullets.create(
+    player.x + (25 * coefDir),
+    player.y - 4,
+    "bullet"
+  );
 
-  // stop total du jeu
-  this.physics.pause();
+  bullet.setCollideWorldBounds(true);
+  bullet.body.onWorldBounds = true;
+  bullet.body.allowGravity = false;
+  bullet.setVelocity(1000 * coefDir, 0);
+}
 
-  // effet visuel joueur
-  player.setTint(0xff0000);
-  player.anims.play("anim_face");
-
-  // afficher GAME OVER géant
-  texte_game_over.setVisible(true);
-  zone_texte_score.setVisible(false);
-
-  gameOver = true;
+/***********************************************************************/
+/** HIT : balle touche cible => -1 PV, destroy si PV = 0
+/***********************************************************************/
+function hit(bullet, cible) {
+  cible.pointsVie--;
+  if (cible.pointsVie <= 0) {
+    cible.destroy();
+  }
+  bullet.destroy();
 }
