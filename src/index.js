@@ -1,10 +1,7 @@
 /***********************************************************************/
 /** BASE PHASER PLATEFORME + DOUBLE SAUT + TIR + CIBLES (PV)
-/** - gauche / droite
-/** - double saut (↑, 2 sauts max)
-/** - A = tir
-/** - balles détruites hors écran
-/** - CIBLES : 2 touches => 1) rebond ralenti  2) disparition
+/** + FIN : "NIVEAU TERMINE"
+/** + BOUTON : "RECOMMENCER" en haut à gauche
 /***********************************************************************/
 
 /***********************************************************************/
@@ -24,6 +21,12 @@ var groupeBullets;
 
 // cibles
 var groupeCibles;
+
+// fin de niveau
+var texte_niveau_termine;
+
+// bouton restart
+var bouton_recommencer;
 
 /***********************************************************************/
 /** CONFIGURATION PHASER
@@ -117,7 +120,7 @@ function create() {
   // groupe de balles
   groupeBullets = this.physics.add.group();
 
-  // cibles (8)
+  // cibles (8 cibles espacées)
   groupeCibles = this.physics.add.group({
     key: "cible",
     repeat: 7,
@@ -129,11 +132,9 @@ function create() {
 
   // paramètres cibles : 2 touches, rebond au départ, vitesse aléatoire
   groupeCibles.children.iterate(function (cibleTrouvee) {
-    cibleTrouvee.hits = 0; // nb de fois touchée
-    cibleTrouvee.setBounce(1); // rebond fort au départ
+    cibleTrouvee.hits = 0;
+    cibleTrouvee.setBounce(1);
     cibleTrouvee.y = Phaser.Math.Between(10, 250);
-
-    // petit mouvement pour voir l'effet de rebond
     cibleTrouvee.setVelocity(
       Phaser.Math.Between(-200, 200),
       Phaser.Math.Between(-120, 120)
@@ -147,14 +148,47 @@ function create() {
   // détruire les balles hors écran
   this.physics.world.on("worldbounds", function (body) {
     var obj = body.gameObject;
-    if (obj && groupeBullets.contains(obj)) {
-      obj.destroy();
-    }
+    if (obj && groupeBullets.contains(obj)) obj.destroy();
+  });
+
+  // message fin de niveau (caché)
+  texte_niveau_termine = this.add.text(400, 300, "NIVEAU TERMINE", {
+    fontSize: "72px",
+    fill: "#ff0000",
+    fontStyle: "bold"
+  });
+  texte_niveau_termine.setOrigin(0.5);
+  texte_niveau_termine.setDepth(100);
+  texte_niveau_termine.setVisible(false);
+
+  // bouton "RECOMMENCER" (haut droite)
+  bouton_recommencer = this.add.text(650, 10, "RECOMMENCER", {
+    fontSize: "20px",
+    fill: "#ffffff",
+    backgroundColor: "#000000",
+    padding: { x: 10, y: 6 }
+  });
+  bouton_recommencer.setScrollFactor(0);
+  bouton_recommencer.setDepth(200);
+  bouton_recommencer.setInteractive({ useHandCursor: true });
+
+  // effet hover
+  bouton_recommencer.on("pointerover", function () {
+    bouton_recommencer.setStyle({ backgroundColor: "#333333" });
+  });
+  bouton_recommencer.on("pointerout", function () {
+    bouton_recommencer.setStyle({ backgroundColor: "#000000" });
+  });
+
+  // action : restart scène
+  var sceneRef = this;
+  bouton_recommencer.on("pointerdown", function () {
+    sceneRef.scene.restart();
   });
 
   // mini UI
-  this.add.text(16, 16, "double saut/tirs/cibles avec 2PV", {
-    fontSize: "20px",
+  this.add.text(16, 44, "↑ double saut | A tirer | Cibles: 2 touches", {
+    fontSize: "18px",
     fill: "#000"
   });
 }
@@ -164,11 +198,9 @@ function create() {
 /***********************************************************************/
 function update() {
   // reset double saut au sol
-  if (player.body.touching.down) {
-    nbSauts = 0;
-  }
+  if (player.body.touching.down) nbSauts = 0;
 
-  // déplacements + mise à jour direction
+  // déplacements + direction
   if (clavier.left.isDown) {
     player.direction = "left";
     player.setVelocityX(-160);
@@ -195,7 +227,7 @@ function update() {
 }
 
 /***********************************************************************/
-/** TIRER : créer une balle et l'envoyer dans la direction du joueur
+/** TIRER
 /***********************************************************************/
 function tirer(player) {
   var coefDir = (player.direction === "left") ? -1 : 1;
@@ -213,29 +245,25 @@ function tirer(player) {
 }
 
 /***********************************************************************/
-/** HIT : touchage des cibles+ effets
+/** HIT : 1er hit => rebond ralenti, 2e hit => disparition
+/** + si plus aucune cible => affiche "NIVEAU TERMINE"
 /***********************************************************************/
 function hit(bullet, cible) {
-  // la balle disparaît à l'impact (comme ton code)
   bullet.destroy();
 
-  // compteur de touches sur la cible
   cible.hits = (cible.hits || 0) + 1;
 
   if (cible.hits === 1) {
-    // 1er hit : on "ralentit le rebond"
-    // - on baisse le rebond
-    // - on baisse la vitesse du rebond  
     cible.setBounce(0.25);
-
     if (cible.body) {
       cible.setVelocity(cible.body.velocity.x * 0.35, cible.body.velocity.y * 0.35);
     }
-
-    //si la cible est touchée une premiere fois alors: teinte legerement rouge
     cible.setTint(0xffaaaa);
   } else {
-    // 2e hit : la cible disparaît
     cible.destroy();
+
+    if (groupeCibles.countActive(true) === 0) {
+      texte_niveau_termine.setVisible(true);
+    }
   }
 }
